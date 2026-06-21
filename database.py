@@ -9,25 +9,20 @@ from mysql.connector import Error
 import streamlit as st
 
 
-# ─────────────────────────────────────────────
-# Konfigurasi koneksi (sesuaikan jika berbeda)
-# ─────────────────────────────────────────────
-DB_CONFIG = {
-    "host":     st.secrets["mysql"]["host"],
-    "port":     int(st.secrets["mysql"]["port"]),
-    "user":     st.secrets["mysql"]["user"],
-    "password": st.secrets["mysql"]["password"],
-    "database": st.secrets["mysql"]["database"],
-    "charset":  "utf8mb4",
-    "ssl_disabled": False,
-}
-
-
-@st.cache_resource(show_spinner=False)
 def get_connection():
-    """Buat koneksi ke MySQL. Di-cache agar tidak reconnect setiap request."""
+    """Buat koneksi baru ke MySQL setiap dipanggil."""
     try:
-        conn = mysql.connector.connect(**DB_CONFIG)
+        conn = mysql.connector.connect(
+            host=st.secrets["mysql"]["host"],
+            port=int(st.secrets["mysql"]["port"]),
+            user=st.secrets["mysql"]["user"],
+            password=st.secrets["mysql"]["password"],
+            database=st.secrets["mysql"]["database"],
+            charset="utf8mb4",
+            connection_timeout=10,
+            ssl_verify_cert=False,
+            ssl_verify_identity=False,
+        )
         return conn
     except Error as e:
         st.error(f"❌ Gagal terhubung ke database: {e}")
@@ -36,12 +31,12 @@ def get_connection():
 
 def fetch_all(query: str, params: tuple = ()):
     """Jalankan SELECT dan kembalikan list of dict."""
-    conn = get_connection()
-    if conn is None:
-        return []
+    conn = None
+    cursor = None
     try:
-        if not conn.is_connected():
-            conn.reconnect()
+        conn = get_connection()
+        if conn is None:
+            return []
         cursor = conn.cursor(dictionary=True)
         cursor.execute(query, params)
         return cursor.fetchall()
@@ -49,27 +44,34 @@ def fetch_all(query: str, params: tuple = ()):
         st.error(f"❌ Query error: {e}")
         return []
     finally:
-        cursor.close()
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
 
 
 def execute_query(query: str, params: tuple = ()):
     """Jalankan INSERT / UPDATE / DELETE. Kembalikan lastrowid."""
-    conn = get_connection()
-    if conn is None:
-        return None
+    conn = None
+    cursor = None
     try:
-        if not conn.is_connected():
-            conn.reconnect()
+        conn = get_connection()
+        if conn is None:
+            return None
         cursor = conn.cursor()
         cursor.execute(query, params)
         conn.commit()
         return cursor.lastrowid
     except Error as e:
         st.error(f"❌ Execute error: {e}")
-        conn.rollback()
+        if conn and conn.is_connected():
+            conn.rollback()
         return None
     finally:
-        cursor.close()
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
 
 
 # ─────────────────────────────────────────────
@@ -92,10 +94,7 @@ def get_semua_metode():
 
 
 def get_aturan_by_bahan_noda(id_bahan: int, id_noda: int):
-    """
-    Ambil semua aturan yang cocok dengan bahan dan noda tertentu.
-    Satu kombinasi bahan+noda → satu rule (sesuai basis pengetahuan).
-    """
+    """Ambil semua aturan yang cocok dengan bahan dan noda tertentu."""
     query = """
         SELECT
             a.id_aturan,
