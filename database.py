@@ -13,12 +13,13 @@ import streamlit as st
 # Konfigurasi koneksi (sesuaikan jika berbeda)
 # ─────────────────────────────────────────────
 DB_CONFIG = {
-    "host":     "localhost",
-    "port":     3306,
-    "user":     "root",
-    "password": "",
-    "database": "db_sepatu_cf",
+    "host":     st.secrets["mysql"]["host"],
+    "port":     int(st.secrets["mysql"]["port"]),
+    "user":     st.secrets["mysql"]["user"],
+    "password": st.secrets["mysql"]["password"],
+    "database": st.secrets["mysql"]["database"],
     "charset":  "utf8mb4",
+    "ssl_disabled": False,
 }
 
 
